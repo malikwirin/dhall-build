@@ -1,3 +1,14 @@
+# Copyright
+
+This project is a fork of dhall-build by Oliver Charles
+(https://github.com/ocharles/dhall-build).
+
+All commits up to and including ocharles/dhall-build@1881ea9a4192a88e47013d1b3be8f02768c5a1a3
+are licensed under the MIT License:
+
+---
+
+MIT License
 Copyright (c) 2018 Ollie Charles
 
 Permission is hereby granted, free of charge, to any person obtaining
