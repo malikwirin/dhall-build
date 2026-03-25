@@ -1,8 +1,3 @@
-{-# language FlexibleContexts #-}
-{-# language LambdaCase #-}
-{-# language OverloadedStrings #-}
-{-# language TypeApplications #-}
-
 module DhallBuild.DerivationTree
   ( DerivationTree(..)
   , dhallBuildNormalizer
@@ -11,14 +6,12 @@ module DhallBuild.DerivationTree
 
 import Data.Foldable (fold, toList)
 import Data.Bifunctor
-import Data.String ( fromString )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.State.Class ( modify )
 import Control.Monad.Trans.State.Strict ( runStateT )
 import Crypto.Hash ( SHA256, hashlazy )
 import Data.Function ( (&) )
 import Data.Maybe ( fromMaybe )
-import Data.Monoid ( (<>) )
 import Data.String ( fromString )
 import Data.Text.Lazy ( Text )
 import Data.Text.Lazy.Encoding ( encodeUtf8 )
@@ -36,8 +29,6 @@ import qualified Dhall.Core as Expr ( Expr(..), Chunks(..) )
 import qualified Dhall.Parser
 import qualified Dhall.Pretty
 import qualified Dhall.TypeCheck
-import qualified Filesystem.Path.CurrentOS as Path
-import qualified Options.Applicative as OptParse
 
 import qualified MemoIO
 import qualified Nix.Daemon
@@ -66,7 +57,7 @@ dhallBuildNormalizer
 dhallBuildNormalizer e = do
   liftIO $ putStrLn ( show ( Dhall.Pretty.prettyExpr e ) )
 
-  case e of 
+  case e of
     Expr.App ( Expr.Var "derivation" ) args | not ( Dhall.Core.freeIn "args" args ) ->
       Just <$> derivation args
 
@@ -86,9 +77,11 @@ derivation args = do
   let
     Just builder =
       case InsOrdMap.lookup "builder" fields' of
-          Just (Expr.UnionLit "Builtin" (Expr.UnionLit "Fetch-Url" _ _) _) ->
+          Just (Expr.App (Expr.Field (Expr.Union _) "Builtin")
+                         (Expr.App (Expr.Field (Expr.Union _) "Fetch-Url") _)) ->
               Just "builtin:fetchurl"
-          Just (Expr.UnionLit "Exe" str _) -> Dhall.extract Dhall.auto str
+          Just (Expr.App (Expr.Field (Expr.Union _) "Exe") str) ->
+              Dhall.extract Dhall.auto str
 
     env =
       case InsOrdMap.lookup "environment" fields' of
@@ -100,38 +93,37 @@ derivation args = do
                   Just t -> Dhall.extract Dhall.auto t
               Just value =
                 case InsOrdMap.lookup "value" x of
-                  Just (Expr.UnionLit "Bool" (Expr.BoolLit True) _) -> Just "1"
-                  Just (Expr.UnionLit "Bool" _ _) -> Just "0"
-                  Just (Expr.UnionLit "Text" t _) -> Dhall.extract Dhall.auto t
-            in (name,value)
+                  Just (Expr.App (Expr.Field (Expr.Union _) "Bool") (Expr.BoolLit True)) -> Just "1"
+                  Just (Expr.App (Expr.Field (Expr.Union _) "Bool") _)                   -> Just "0"
+                  Just (Expr.App (Expr.Field (Expr.Union _) "Text") t)                   -> Dhall.extract Dhall.auto t
+            in (name, value)
 
     outputHashBindings (Expr.RecordLit args) = do
         let
           mode =
             case InsOrdMap.lookup "mode" args of
-                Just (Expr.UnionLit "Flat" _ _) -> "flat"
-                Just (Expr.UnionLit "Recursive" _ _) -> "recursive"
+                Just (Expr.App (Expr.Field (Expr.Union _) "Flat") _)      -> "flat"
+                Just (Expr.App (Expr.Field (Expr.Union _) "Recursive") _) -> "recursive"
           Just hash = case InsOrdMap.lookup "hash" args of Just a -> Dhall.extract Dhall.auto a
           algorithm =
             case InsOrdMap.lookup "algorithm" args of
-                Just (Expr.UnionLit "SHA256" _ _) -> "sha256"
+                Just (Expr.App (Expr.Field (Expr.Union _) "SHA256") _) -> "sha256"
         Map.fromList
           [("outputHashMode", mode)
           ,("outputHash", hash)
           ,("outputHashAlgo", algorithm)
           ]
-          
+
     moutputHash =
       case InsOrdMap.lookup "output-hash" fields' of
-          Just (Expr.OptionalLit _t e) -> fmap outputHashBindings e
           Just (Expr.Some e) -> Just ( outputHashBindings e )
-          Just _ -> Nothing
-          Nothing -> Nothing
+          Just _             -> Nothing
+          Nothing            -> Nothing
 
     system =
       case InsOrdMap.lookup "system" fields' of
-          Just (Expr.UnionLit "builtin" _ _) -> "builtin"
-          Just (Expr.UnionLit "x86_64-linux" _ _) -> "x86_64-linux"
+          Just (Expr.App (Expr.Field (Expr.Union _) "builtin") _)      -> "builtin"
+          Just (Expr.App (Expr.Field (Expr.Union _) "x86_64-linux") _) -> "x86_64-linux"
 
   let
     this =
@@ -159,7 +151,6 @@ derivation args = do
         & Map.lookup "out"
         & fromMaybe ( error "No output" )
         & Nix.Derivation.path
-        & Path.encodeString
         & fromString
         & Expr.TextLit
     )
@@ -188,7 +179,7 @@ addDerivationTree _ (EvalNix src) =
 
 derivationTreeToDerivation
   :: ( MonadIO m )
-  => DerivationTree -> m Nix.Derivation.Derivation
+  => DerivationTree -> m (Nix.Derivation.Derivation FilePath Data.Text.Text)
 derivationTreeToDerivation = \case
   EvalNix src -> do
     drvPath <-
@@ -214,7 +205,7 @@ derivationTreeToDerivation = \case
               d <- derivationTreeToDerivation t
               path <- case t of
                 EvalNix src ->
-                  liftIO ( fromString <$> Nix.Instantiate.instantiateExpr src  )
+                  liftIO ( fromString <$> Nix.Instantiate.instantiateExpr src )
 
                 DerivationTree{} -> return $
                   fromString $ Nix.StorePath.textPath
@@ -243,7 +234,7 @@ derivationTreeToDerivation = \case
           , Nix.Derivation.args = dtArgs t
           , Nix.Derivation.env =
               fmap
-                ( fromString . Path.encodeString . Nix.Derivation.path )
+                ( fromString . Nix.Derivation.path )
                 ( Nix.Derivation.outputs drv ) <>
               dtEnv t
           }
@@ -264,7 +255,7 @@ hashDerivationFileModulo =
 
 hashDerivationModulo
   :: ( MonadIO m )
-  => Nix.Derivation.Derivation -> m String
+  => Nix.Derivation.Derivation FilePath Data.Text.Text -> m String
 hashDerivationModulo =
   go
 
@@ -274,14 +265,14 @@ hashDerivationModulo =
     case Map.toList ( Nix.Derivation.outputs derivation ) of
       [ ( "out", Nix.Derivation.DerivationOutput path hashAlgo hash ) ] | not ( Data.Text.null hash ) ->
         return . show . hashlazy @SHA256 . encodeUtf8 . LazyText.fromStrict $
-        "fixed:out:" <> hashAlgo <> ":" <> hash <> ":" <> fromString (Path.encodeString path)
+        "fixed:out:" <> hashAlgo <> ":" <> hash <> ":" <> fromString path
 
       _ -> do
         maskedInputs <-
           fmap Map.fromList
             ( mapM
                 ( \ (path, outs) -> do
-                    hash <- liftIO ( hashDerivationFileModulo ( Path.encodeString path ) )
+                    hash <- liftIO ( hashDerivationFileModulo path )
                     return ( fromString hash, outs )
                 )
                 ( Map.toList ( Nix.Derivation.inputDrvs derivation ) )
@@ -290,3 +281,4 @@ hashDerivationModulo =
         return $
           show . hashlazy @SHA256 . encodeUtf8 . LazyBuilder.toLazyText $
           Nix.Derivation.buildDerivation derivation { Nix.Derivation.inputDrvs = maskedInputs }
+

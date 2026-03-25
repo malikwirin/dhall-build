@@ -4,8 +4,6 @@
 
 module MemoIO ( memoIO, memoIOWith ) where
 
-import System.IO.Unsafe
-
 import qualified Data.MemoTrie as MemoTrie
 import qualified System.IO.Unsafe
 

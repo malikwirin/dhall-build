@@ -1,18 +1,14 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
-
 module Nix.Derivations ( loadDerivation ) where
 
 import qualified Data.Attoparsec.Text.Lazy as Attoparsec
 import qualified Data.Text.Lazy.IO as LazyText
+import qualified Data.Text as Text
 import qualified Nix.Derivation as Nix
 
 import qualified MemoIO
 
 
-loadDerivation :: FilePath -> IO Nix.Derivation
+loadDerivation :: FilePath -> IO (Nix.Derivation FilePath Text.Text)
 loadDerivation =
   MemoIO.memoIO go
 
