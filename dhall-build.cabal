@@ -2,29 +2,18 @@ cabal-version:       3.0
 name:                dhall-build
 version:             0.2.0.0
 synopsis:            Drive the Nix build system with Dhall
--- description:
 homepage:            https://github.com/malikwirin/dhall-build
 license:             AGPL-3.0-or-later
 license-file:        LICENSE.md
 author:              Ollie Charles, Malik Najhi
 maintainer:          abdelmalik.najhi@stud.hs-kempten.de
-copyright:	     2018 Ollie Charles
-		     2026 Malik Najhi
--- category:
+copyright:           2018 Ollie Charles
+                     2026 Malik Najhi
 build-type:          Simple
 extra-source-files:  ChangeLog.md, README.md
-cabal-version:       3.0
 
-executable dhall-build
-  main-is:             dhall-build.hs
-  other-modules:
-    DhallBuild.DerivationTree
-    MemoIO
-    Nix.Daemon
-    Nix.Derivations
-    Nix.Instantiate
-    Nix.StorePath
-  build-depends:       base 
+common deps
+  build-depends:       base
                      , dhall
                      , text
                      , binary
@@ -43,5 +32,34 @@ executable dhall-build
                      , insert-ordered-containers
                      , optparse-applicative
                      , MemoTrie
-  ghc-options: -Wall
+  ghc-options:         -Wall
   default-language:    GHC2024
+
+library
+  import:              deps
+  exposed-modules:     DhallBuild.DerivationTree
+  other-modules:
+    MemoIO
+    Nix.Daemon
+    Nix.Derivations
+    Nix.Instantiate
+    Nix.StorePath
+  hs-source-dirs:      .
+
+executable dhall-build
+  import:              deps
+  main-is:             dhall-build.hs
+  build-depends:       dhall-build
+
+test-suite dhall-build-test
+  import:              deps
+  type:                exitcode-stdio-1.0
+  main-is:             Spec.hs
+  hs-source-dirs:      test
+  other-modules:       NormalizerSpec
+  build-tool-depends:  hspec-discover:hspec-discover
+  build-depends:       dhall-build
+                     , hspec
+		     , dhall
+		     , void
+

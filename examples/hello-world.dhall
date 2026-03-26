@@ -1,3 +1,4 @@
+-- maybe use example with not fully evaluated env args but this currently points to a bug
 derivation
   { name = "hello-script"
   , system = < builtin | x86_64-linux >.x86_64-linux
