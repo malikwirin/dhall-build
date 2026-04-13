@@ -9,7 +9,7 @@ import Data.Text.Lazy ( Text )
 
 import qualified Data.Binary.Get as Binary
 import qualified Data.ByteString.Lazy as BS
-import qualified Data.ByteString.Lazy.Builder as BS
+import qualified Data.ByteString.Builder as BS
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.Encoding as L
 import qualified Network.Socket as N hiding ( recv )

@@ -4,7 +4,8 @@ module Main ( main ) where
 
 import Dhall.Core ( Expr(..) )
 import qualified Dhall.Map as Map
-import Control.Monad.Trans.State.Strict ( evalStateT, runStateT )
+import Control.Monad.Trans.State.Strict ( evalStateT )
+import Data.IORef ( newIORef, readIORef )
 import Lens.Family
 import Control.Applicative ( (<**>) )
 import Control.Exception ( throwIO )
@@ -25,39 +26,31 @@ import qualified Nix.Daemon
 commandLineParser :: OptParse.ParserInfo FilePath
 commandLineParser =
   OptParse.info ( parser <**> OptParse.helper ) mempty
-
   where
-
-  parser =
-    OptParse.strArgument ( OptParse.metavar "FILE" )
+  parser = OptParse.strArgument ( OptParse.metavar "FILE" )
 
 
 main :: IO ()
 main = do
-  f <-
-    OptParse.execParser commandLineParser
-
-  t <-
-    Text.readFile f
+  f <- OptParse.execParser commandLineParser
+  t <- Text.readFile f
 
   parsedExpr <-
     case Dhall.Parser.exprFromText mempty t of
-      Left e ->
-        throwIO e
+      Left e  -> throwIO e
+      Right a -> return a
 
-      Right a ->
-        return a
+  ref <- newIORef []
 
-  ( res, derivationTrees ) <-
-    runStateT
-      ( evalStateT
-        ( Dhall.Import.loadWith parsedExpr )
-        ( Dhall.Import.emptyStatus "."
-            & Dhall.Import.normalizer .~ Dhall.Core.ReifiedNormalizer DhallBuild.dhallBuildNormalizer
-            & Dhall.Import.startingContext .~ context
-        )
+  res <-
+    evalStateT
+      ( Dhall.Import.loadWith parsedExpr )
+      ( Dhall.Import.emptyStatus "."
+          & Dhall.Import.normalizer .~ Just (DhallBuild.mkReifiedNormalizer ref)
+          & Dhall.Import.startingContext .~ context
       )
-      []
+
+  derivationTrees <- readIORef ref
 
   mapM_ print derivationTrees
 
@@ -67,75 +60,81 @@ main = do
   Text.putStrLn ( Dhall.Core.pretty res )
 
 
--- context :: Dhall.Context.Context (Expr s X)
+mf :: Expr s a -> Dhall.Core.RecordField s a
+mf = Dhall.Core.makeRecordField
+
+
 context =
   Dhall.Context.insert
     "derivation"
     ( Pi
+        Nothing
         "_"
         ( Record
             ( Map.fromList
-                [ ( "args", List `App` Text )
+                [ ( "args", mf ( List `App` Text ) )
                 , ( "builder"
-                  , Union
+                  , mf ( Union
                       ( Map.fromList
                           [ ( "Builtin"
-                            , Union
+                            , Just ( Union
                                 ( Map.fromList
-                                    [ ( "Fetch-Url", Record mempty ) ]
-                                )
+                                    [ ( "Fetch-Url", Nothing ) ]
+                                ) )
                             )
-                          , ( "Exe", Text )
+                          , ( "Exe", Just Text )
                           ]
-                      )
+                      ) )
                   )
                 , ( "environment"
-                  , List
+                  , mf ( List
                       `App`
                         Record
                           ( Map.fromList
-                              [ ( "name", Text )
+                              [ ( "name", mf Text )
                               , ( "value"
-                                , Union
+                                , mf ( Union
                                     ( Map.fromList
-                                        [ ( "Bool", Bool ), ( "Text", Text ) ]
-                                    )
+                                        [ ( "Bool", Just Bool )
+                                        , ( "Text", Just Text )
+                                        ]
+                                    ) )
                                 )
                               ]
-                          )
+                          ) )
                   )
-                , ( "name", Text )
+                , ( "name", mf Text )
                 , ( "output-hash"
-                  , Optional
+                  , mf ( Optional
                       `App`
                         Record
                           ( Map.fromList
-                              [ ("algorithm"
-                                , Union
+                              [ ( "algorithm"
+                                , mf ( Union
                                     ( Map.fromList
-                                        [ ( "SHA256", Record mempty ) ]
-                                    )
+                                        [ ( "SHA256", Nothing ) ]
+                                    ) )
                                 )
-                              , ( "hash", Text )
+                              , ( "hash", mf Text )
                               , ( "mode"
-                                , Union
+                                , mf ( Union
                                     ( Map.fromList
-                                        [ ("Flat", Record mempty)
-                                        , ("Recursive", Record mempty)
+                                        [ ( "Flat", Nothing )
+                                        , ( "Recursive", Nothing )
                                         ]
-                                    )
+                                    ) )
                                 )
                               ]
-                          )
+                          ) )
                   )
-                , ( "outputs", List `App` Text )
+                , ( "outputs", mf ( List `App` Text ) )
                 , ( "system"
-                  , Union
+                  , mf ( Union
                       ( Map.fromList
-                          [ ( "builtin", Record mempty )
-                          , ( "x86_64-linux", Record mempty )
+                          [ ( "builtin", Nothing )
+                          , ( "x86_64-linux", Nothing )
                           ]
-                      )
+                      ) )
                   )
                 ]
             )
@@ -143,3 +142,4 @@ context =
         Text
     )
     Dhall.Context.empty
+

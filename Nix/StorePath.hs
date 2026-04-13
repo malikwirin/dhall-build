@@ -15,13 +15,13 @@ import qualified Data.ByteArray as Mem
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Map as Map
 import qualified Data.Text.Lazy as T
+import qualified Data.Text as StrictText
 import qualified Data.Text.Lazy.Builder as LazyBuilder
 import qualified Nix.Derivation as Nix
 
 
 -- | Given a Derivation, calculate its output path.
-
-derivationOutputPath :: Text -> Nix.Derivation -> String
+derivationOutputPath :: Text -> Nix.Derivation FilePath StrictText.Text -> String
 derivationOutputPath derivationName derivation =
   derivation
     & clearOutputs
